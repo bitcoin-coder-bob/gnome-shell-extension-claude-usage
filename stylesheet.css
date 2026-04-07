@@ -1,0 +1,36 @@
+.claude-usage-label {
+    color: #d4a574;
+    font-weight: bold;
+    font-size: 11px;
+    padding: 0 8px;
+}
+
+.claude-usage-label-warning {
+    color: #e8a838;
+    font-weight: bold;
+    font-size: 11px;
+    padding: 0 8px;
+}
+
+.claude-usage-label-critical {
+    color: #e85038;
+    font-weight: bold;
+    font-size: 11px;
+    padding: 0 8px;
+}
+
+.claude-menu-heading {
+    font-weight: bold;
+    font-size: 13px;
+    color: #d4a574;
+}
+
+.claude-menu-item {
+    font-size: 12px;
+}
+
+.claude-menu-status {
+    font-size: 11px;
+    color: #999999;
+    font-style: italic;
+}

@@ -1,0 +1,12 @@
+{
+    "name": "Claude Usage Monitor",
+    "description": "Shows Claude API usage percentage and reset time in the top bar",
+    "uuid": "claude-usage@gnome-extension",
+    "version": 1,
+    "settings-schema": "org.gnome.shell.extensions.claude-usage",
+    "shell-version": [
+        "42",
+        "43",
+        "44"
+    ]
+}
