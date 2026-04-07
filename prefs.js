@@ -91,7 +91,7 @@ function buildPrefsWidget() {
             if (file.query_exists(null)) {
                 let [ok, contents] = file.load_contents(null);
                 if (ok) {
-                    let creds = JSON.parse(imports.byteArray.toString(contents));
+                    let creds = JSON.parse(new TextDecoder().decode(contents));
                     if (creds.claudeAiOauth && creds.claudeAiOauth.accessToken) {
                         let expiry = creds.claudeAiOauth.expiresAt;
                         if (!expiry || Date.now() <= expiry) {
@@ -117,7 +117,6 @@ function buildPrefsWidget() {
     updateAuthLabel();
 
     // Watch credentials file for changes
-    let credsFile = Gio.File.new_for_path(credsPath);
     let credsDir = Gio.File.new_for_path(GLib.get_home_dir() + '/.claude');
     let monitor = credsDir.monitor_directory(Gio.FileMonitorFlags.NONE, null);
     monitor.connect('changed', (m, file, otherFile, eventType) => {
@@ -139,8 +138,10 @@ function buildPrefsWidget() {
     });
     grid.attach(helpLabel, 0, 3, 2, 1);
 
-    // Keep monitor alive as long as the widget exists
-    grid._credentialMonitor = monitor;
+    // Cancel monitor when widget is destroyed
+    grid.connect('destroy', () => {
+        monitor.cancel();
+    });
 
     return grid;
 }

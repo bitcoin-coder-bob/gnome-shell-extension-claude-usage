@@ -6,14 +6,17 @@ const PanelMenu = imports.ui.panelMenu;
 const PopupMenu = imports.ui.popupMenu;
 const ExtensionUtils = imports.misc.extensionUtils;
 
-const CREDENTIALS_PATH = GLib.get_home_dir() + '/.claude/.credentials.json';
-const STATS_CACHE_PATH = GLib.get_home_dir() + '/.claude/stats-cache.json';
 const API_URL = 'https://api.anthropic.com/v1/messages';
 
 const ClaudeIndicator = GObject.registerClass(
 class ClaudeIndicator extends PanelMenu.Button {
     _init() {
         super._init(0.0, 'Claude Usage Monitor');
+
+        // Runtime paths
+        let home = GLib.get_home_dir();
+        this._credentialsPath = home + '/.claude/.credentials.json';
+        this._statsCachePath = home + '/.claude/stats-cache.json';
 
         this._settings = ExtensionUtils.getSettings(
             'org.gnome.shell.extensions.claude-usage'
@@ -40,6 +43,7 @@ class ClaudeIndicator extends PanelMenu.Button {
         this._sevenDayReset = null;
         this._overageUtil = null;
         this._status = null;
+        this._subscriptionType = null;
         this._lastRefresh = null;
         this._timer = null;
         this._resetTimer = null;
@@ -56,11 +60,17 @@ class ClaudeIndicator extends PanelMenu.Button {
 
     _buildMenu() {
         // Header
-        let headerItem = new PopupMenu.PopupMenuItem('Claude Max Usage', {
+        this._headerItem = new PopupMenu.PopupMenuItem('Claude Usage', {
             reactive: false,
             style_class: 'claude-menu-heading',
         });
-        this.menu.addMenuItem(headerItem);
+        this.menu.addMenuItem(this._headerItem);
+
+        // Plan type
+        this._planItem = new PopupMenu.PopupMenuItem(
+            '  Plan: --', { reactive: false, style_class: 'claude-menu-status' }
+        );
+        this.menu.addMenuItem(this._planItem);
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         // 5-hour window
@@ -77,7 +87,8 @@ class ClaudeIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(this._fiveHourBarItem);
         this.menu.addMenuItem(this._fiveHourResetItem);
 
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        this._rateLimitSep1 = new PopupMenu.PopupSeparatorMenuItem();
+        this.menu.addMenuItem(this._rateLimitSep1);
 
         // 7-day window
         this._sevenDayHeaderItem = new PopupMenu.PopupMenuItem(
@@ -93,7 +104,8 @@ class ClaudeIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(this._sevenDayBarItem);
         this.menu.addMenuItem(this._sevenDayResetItem);
 
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        this._rateLimitSep2 = new PopupMenu.PopupSeparatorMenuItem();
+        this.menu.addMenuItem(this._rateLimitSep2);
 
         // Status line
         this._statusItem = new PopupMenu.PopupMenuItem(
@@ -106,6 +118,15 @@ class ClaudeIndicator extends PanelMenu.Button {
             'Last check: never', { reactive: false, style_class: 'claude-menu-status' }
         );
         this.menu.addMenuItem(this._lastCheckItem);
+
+        // Collect rate limit items for visibility toggling
+        this._rateLimitItems = [
+            this._fiveHourHeaderItem, this._fiveHourBarItem, this._fiveHourResetItem,
+            this._rateLimitSep1,
+            this._sevenDayHeaderItem, this._sevenDayBarItem, this._sevenDayResetItem,
+            this._rateLimitSep2,
+            this._statusItem,
+        ];
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
@@ -204,13 +225,13 @@ class ClaudeIndicator extends PanelMenu.Button {
 
     _readCredentials() {
         try {
-            let file = Gio.File.new_for_path(CREDENTIALS_PATH);
+            let file = Gio.File.new_for_path(this._credentialsPath);
             if (!file.query_exists(null)) return null;
 
             let [ok, contents] = file.load_contents(null);
             if (!ok) return null;
 
-            let text = imports.byteArray.toString(contents);
+            let text = new TextDecoder().decode(contents);
             let creds = JSON.parse(text);
 
             if (!creds.claudeAiOauth || !creds.claudeAiOauth.accessToken)
@@ -220,6 +241,9 @@ class ClaudeIndicator extends PanelMenu.Button {
             let expiry = creds.claudeAiOauth.expiresAt;
             if (expiry && Date.now() > expiry) return null;
 
+            // Store subscription info
+            this._subscriptionType = creds.claudeAiOauth.subscriptionType || null;
+
             return creds.claudeAiOauth.accessToken;
         } catch (e) {
             return null;
@@ -228,13 +252,13 @@ class ClaudeIndicator extends PanelMenu.Button {
 
     _readStatsCache() {
         try {
-            let file = Gio.File.new_for_path(STATS_CACHE_PATH);
+            let file = Gio.File.new_for_path(this._statsCachePath);
             if (!file.query_exists(null)) return null;
 
             let [ok, contents] = file.load_contents(null);
             if (!ok) return null;
 
-            let text = imports.byteArray.toString(contents);
+            let text = new TextDecoder().decode(contents);
             return JSON.parse(text);
         } catch (e) {
             return null;
@@ -296,6 +320,28 @@ class ClaudeIndicator extends PanelMenu.Button {
         }
     }
 
+    _setRateLimitVisible(visible) {
+        for (let item of this._rateLimitItems) {
+            if (visible)
+                item.actor.show();
+            else
+                item.actor.hide();
+        }
+    }
+
+    _isMaxPlan() {
+        return this._subscriptionType && this._subscriptionType.startsWith('max');
+    }
+
+    _formatPlanName(type) {
+        if (!type) return 'Unknown';
+        if (type.startsWith('max')) return 'Max';
+        if (type === 'pro') return 'Pro';
+        if (type === 'free') return 'Free';
+        // Capitalize first letter for anything else
+        return type.charAt(0).toUpperCase() + type.slice(1);
+    }
+
     _refresh() {
         // Always update stats from local cache
         this._updateStatsDisplay();
@@ -308,10 +354,30 @@ class ClaudeIndicator extends PanelMenu.Button {
             this._statusItem.label.set_text(
                 "Run 'claude' in a terminal to log in"
             );
+            this._planItem.label.set_text('  Plan: --');
+            this._setRateLimitVisible(false);
             return;
         }
 
-        // Tiny API call to get rate limit headers
+        // Update plan display
+        let planName = this._formatPlanName(this._subscriptionType);
+        this._planItem.label.set_text(`  Plan: ${planName}`);
+
+        if (!this._isMaxPlan()) {
+            // Non-Max plans: show stats only, no rate limit API call
+            this._setRateLimitVisible(false);
+            this._label.set_text(`Claude: ${planName}`);
+            this._label.style_class = 'claude-usage-label';
+            this._lastRefresh = new Date();
+            this._lastCheckItem.label.set_text(
+                'Last check: ' + this._lastRefresh.toLocaleTimeString()
+            );
+            return;
+        }
+
+        this._setRateLimitVisible(true);
+
+        // Tiny API call to get rate limit headers (Max only)
         let message = Soup.Message.new('POST', API_URL);
 
         message.request_headers.append('Authorization', 'Bearer ' + token);

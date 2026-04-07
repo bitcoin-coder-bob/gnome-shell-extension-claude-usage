@@ -1,8 +1,9 @@
 {
     "name": "Claude Usage Monitor",
-    "description": "Shows Claude API usage percentage and reset time in the top bar",
-    "uuid": "claude-usage@gnome-extension",
+    "description": "Shows Claude Max subscription usage percentage, rate limits, and activity stats in the top panel",
+    "uuid": "claude-usage@bitcoin-coder-bob.github.io",
     "version": 1,
+    "url": "https://github.com/bitcoin-coder-bob/gnome-shell-extension-claude-usage",
     "settings-schema": "org.gnome.shell.extensions.claude-usage",
     "shell-version": [
         "42",

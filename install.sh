@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-EXT_UUID="claude-usage@gnome-extension"
+EXT_UUID="claude-usage@bitcoin-coder-bob.github.io"
 EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 
