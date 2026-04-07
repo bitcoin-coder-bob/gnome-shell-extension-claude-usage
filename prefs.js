@@ -82,32 +82,49 @@ function buildPrefsWidget() {
         }
     });
 
-    // Check auth status
+    // Check auth status and update label
     let credsPath = GLib.get_home_dir() + '/.claude/.credentials.json';
-    let loggedIn = false;
-    try {
-        let file = Gio.File.new_for_path(credsPath);
-        if (file.query_exists(null)) {
-            let [ok, contents] = file.load_contents(null);
-            if (ok) {
-                let creds = JSON.parse(imports.byteArray.toString(contents));
-                if (creds.claudeAiOauth && creds.claudeAiOauth.accessToken) {
-                    let expiry = creds.claudeAiOauth.expiresAt;
-                    if (!expiry || Date.now() <= expiry) {
-                        loggedIn = true;
+
+    function checkAuth() {
+        try {
+            let file = Gio.File.new_for_path(credsPath);
+            if (file.query_exists(null)) {
+                let [ok, contents] = file.load_contents(null);
+                if (ok) {
+                    let creds = JSON.parse(imports.byteArray.toString(contents));
+                    if (creds.claudeAiOauth && creds.claudeAiOauth.accessToken) {
+                        let expiry = creds.claudeAiOauth.expiresAt;
+                        if (!expiry || Date.now() <= expiry) {
+                            return true;
+                        }
                     }
                 }
             }
+        } catch (e) {
+            // ignore
         }
-    } catch (e) {
-        // ignore
+        return false;
     }
 
-    if (loggedIn) {
-        authStatusLabel.set_markup('<small><span foreground="#73c991">Logged in</span></small>');
-    } else {
-        authStatusLabel.set_markup('<small><span foreground="#e8a838">Not logged in</span></small>');
+    function updateAuthLabel() {
+        if (checkAuth()) {
+            authStatusLabel.set_markup('<small><span foreground="#73c991">Logged in</span></small>');
+        } else {
+            authStatusLabel.set_markup('<small><span foreground="#e8a838">Not logged in</span></small>');
+        }
     }
+
+    updateAuthLabel();
+
+    // Watch credentials file for changes
+    let credsFile = Gio.File.new_for_path(credsPath);
+    let credsDir = Gio.File.new_for_path(GLib.get_home_dir() + '/.claude');
+    let monitor = credsDir.monitor_directory(Gio.FileMonitorFlags.NONE, null);
+    monitor.connect('changed', (m, file, otherFile, eventType) => {
+        if (file.get_basename() === '.credentials.json') {
+            updateAuthLabel();
+        }
+    });
 
     authBox.append(loginButton);
     authBox.append(authStatusLabel);
@@ -121,6 +138,9 @@ function buildPrefsWidget() {
         margin_top: 8,
     });
     grid.attach(helpLabel, 0, 3, 2, 1);
+
+    // Keep monitor alive as long as the widget exists
+    grid._credentialMonitor = monitor;
 
     return grid;
 }

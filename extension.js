@@ -394,9 +394,9 @@ class ClaudeIndicator extends PanelMenu.Button {
         this._label.set_text(panelText);
 
         // Color based on 5h utilization (the tighter window)
-        if (fivePercent >= 90) {
+        if (fivePercent >= 85) {
             this._label.style_class = 'claude-usage-label-critical';
-        } else if (fivePercent >= 70) {
+        } else if (fivePercent >= 50) {
             this._label.style_class = 'claude-usage-label-warning';
         } else {
             this._label.style_class = 'claude-usage-label';
