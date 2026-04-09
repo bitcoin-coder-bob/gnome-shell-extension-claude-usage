@@ -7,6 +7,8 @@ const PopupMenu = imports.ui.popupMenu;
 const ExtensionUtils = imports.misc.extensionUtils;
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
+const TOKEN_URL = 'https://console.anthropic.com/v1/oauth/token';
+const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 
 const ClaudeIndicator = GObject.registerClass(
 class ClaudeIndicator extends PanelMenu.Button {
@@ -45,6 +47,7 @@ class ClaudeIndicator extends PanelMenu.Button {
         this._status = null;
         this._subscriptionType = null;
         this._lastRefresh = null;
+        this._refreshing = false;
         this._timer = null;
         this._resetTimer = null;
 
@@ -237,17 +240,69 @@ class ClaudeIndicator extends PanelMenu.Button {
             if (!creds.claudeAiOauth || !creds.claudeAiOauth.accessToken)
                 return null;
 
-            // Check if token is expired
-            let expiry = creds.claudeAiOauth.expiresAt;
-            if (expiry && Date.now() > expiry) return null;
-
             // Store subscription info
             this._subscriptionType = creds.claudeAiOauth.subscriptionType || null;
+
+            // Check if token is expired
+            let expiry = creds.claudeAiOauth.expiresAt;
+            if (expiry && Date.now() > expiry) {
+                // Token expired — try refresh in background
+                if (creds.claudeAiOauth.refreshToken && !this._refreshing) {
+                    this._refreshToken(creds);
+                }
+                return null;
+            }
 
             return creds.claudeAiOauth.accessToken;
         } catch (e) {
             return null;
         }
+    }
+
+    _refreshToken(creds) {
+        this._refreshing = true;
+
+        let message = Soup.Message.new('POST', TOKEN_URL);
+        message.request_headers.append('content-type', 'application/json');
+
+        let body = JSON.stringify({
+            grant_type: 'refresh_token',
+            refresh_token: creds.claudeAiOauth.refreshToken,
+            client_id: CLIENT_ID,
+        });
+
+        message.set_request('application/json', Soup.MemoryUse.COPY, body);
+
+        this._session.queue_message(message, (_session, msg) => {
+            this._refreshing = false;
+
+            if (msg.status_code !== 200) return;
+
+            try {
+                let resp = JSON.parse(msg.response_body.data);
+                if (!resp.access_token) return;
+
+                // Update credentials file
+                creds.claudeAiOauth.accessToken = resp.access_token;
+                if (resp.refresh_token)
+                    creds.claudeAiOauth.refreshToken = resp.refresh_token;
+                creds.claudeAiOauth.expiresAt =
+                    Date.now() + (resp.expires_in || 3600) * 1000;
+
+                let file = Gio.File.new_for_path(this._credentialsPath);
+                file.replace_contents(
+                    JSON.stringify(creds, null, 2),
+                    null, false,
+                    Gio.FileCreateFlags.REPLACE_DESTINATION,
+                    null
+                );
+
+                // Retry the refresh cycle now that we have a valid token
+                this._refresh();
+            } catch (e) {
+                // Refresh failed silently — user will see "Log in"
+            }
+        });
     }
 
     _readStatsCache() {
